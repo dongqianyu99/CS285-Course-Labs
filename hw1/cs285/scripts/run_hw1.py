@@ -67,12 +67,14 @@ def run_training_loop(params):
 
     # Maximum length for episodes
     params['ep_len'] = params['ep_len'] or env.spec.max_episode_steps
+    # print(params['ep_len'])
     MAX_VIDEO_LEN = params['ep_len']
 
     assert isinstance(env.action_space, gym.spaces.Box), "Environment must be continuous"
     # Observation and action sizes
     ob_dim = env.observation_space.shape[0]
     ac_dim = env.action_space.shape[0]
+    # print(f"Action dimension for {params['env_name']}: {ac_dim}") # 8
 
     # simulation timestep, will be used for video saving
     if 'model' in dir(env):
@@ -125,6 +127,11 @@ def run_training_loop(params):
         if itr == 0:
             # BC training from expert data.
             paths = pickle.load(open(params['expert_data'], 'rb'))
+
+            # [DEBUG]
+            # expert_ac_dim = paths[0]['action'].shape[1]
+            # print(f"DEBUG: Action dimension in expert data file: {expert_ac_dim}")
+
             envsteps_this_batch = 0
         else:
             # DAGGER training from sampled data relabeled by expert
@@ -132,7 +139,9 @@ def run_training_loop(params):
             # TODO: collect `params['batch_size']` transitions
             # HINT: use utils.sample_trajectories
             # TODO: implement missing parts of utils.sample_trajectory
-            paths, envsteps_this_batch = TODO
+            paths, envsteps_this_batch = utils.sample_trajectories(
+                env, actor, params['batch_size'], params['ep_len']
+            )
 
             # relabel the collected obs with actions from a provided expert policy
             if params['do_dagger']:
@@ -141,7 +150,10 @@ def run_training_loop(params):
                 # TODO: relabel collected obsevations (from our policy) with labels from expert policy
                 # HINT: query the policy (using the get_action function) with paths[i]["observation"]
                 # and replace paths[i]["action"] with these expert labels
-                paths = TODO
+                for path in paths:
+                    observation = path['observation']
+                    expert_action = expert_policy.get_action(observation)
+                    path['action'] = expert_action
 
         total_envsteps += envsteps_this_batch
         # add collected data to replay buffer
@@ -156,8 +168,10 @@ def run_training_loop(params):
           # HINT1: how much data = params['train_batch_size']
           # HINT2: use np.random.permutation to sample random indices
           # HINT3: return corresponding data points from each array (i.e., not different indices from each array)
-          # for imitation learning, we only need observations and actions.  
-          ob_batch, ac_batch = TODO
+          # for imitation learning, we only need observations and actions. 
+          indices = np.random.permutation(len(replay_buffer))[:params['train_batch_size']]
+          ob_batch = ptu.from_numpy(replay_buffer.obs[indices])
+          ac_batch = ptu.from_numpy(replay_buffer.acs[indices])
 
           # use the sampled data to train an agent
           train_log = actor.update(ob_batch, ac_batch)
